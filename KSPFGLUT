@@ -1,0 +1,176 @@
+#!/usr/bin/perl
+
+# KSP forum Get Last Updated Thread
+# 06/11/2014
+
+use strict;
+
+use WWW::Mechanize;
+use HTML::Strip;
+use Date::Parse;
+use Data::Dumper;
+
+
+my $forum_tz = '';
+
+# tmp nil2work thread
+my $url_to_check = "http://forum.kerbalspaceprogram.com/threads/83364";
+
+my $last_check = 0;
+my $has_been_updated_since_last_check = 0;
+
+
+my $url_list = 'testurl1.txt'; #'/tmp/url_glut';
+
+my $urls = load_url_list ($url_list);
+
+my $check_result;
+
+map
+{
+	$check_result = check_url ($_);	
+}
+@{$urls};
+
+
+print "URLS=[".Dumper ($urls)."]\n";
+
+# check URL
+
+sub check_url
+{
+	my $url_to_check = shift;
+
+	if (defined $url_to_check and $url_to_check ne '')
+	{
+		my $jeb = WWW::Mechanize->new ();
+		$jeb->agent_alias ('Linux Mozilla');
+		$jeb->cookie_jar (HTTP::Cookies->new ( file => $ENV{HOME}.'/.checkurl.cookie', autosave => 1 ));
+		
+		my $check_response = $jeb->get
+			(
+				$url_to_check,
+				#Host => '',
+				User_Agent => 'Mozilla/5.0 (X11; Linux x86_64; rv:17.0) Gecko/20130810 Firefox/17.0 Iceweasel/17.0.8',
+				Accept => 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+				#'Accept-Language' => 'en-us;q=0.5',
+				#'Accept_Encoding' => 'gzip, deflate',
+				#Referer => '',
+				DNT => 1,
+				#Connection => 'keep-alive',
+			);
+
+		print "GETREP=[".$jeb->status ()."]\n";
+		#print "REP=[".$check_response->decoded_content ()."]\n";
+
+		my $last_edited_date = get_last_edited_date ($check_response->decoded_content());
+
+		print "LED=[".($last_edited_date || 'no date found')."]\n";
+	}
+	else
+	{
+		print STDERR "invalid/empty URL provided\n";
+	}
+}
+
+
+sub load_url_list
+{
+	my $config_file = shift;
+	my $urls = [];
+
+	if (defined $config_file and $config_file ne "" and -e $config_file and -r $config_file and !-z $config_file)
+	{
+		if (open (LISTFILE, '< '.$config_file))
+		{
+			while (my $url = <LISTFILE>)
+			{
+				chomp $url;
+				next if ($url =~ /^(#|\s+)/);
+
+				print "URL read=[$url]\n";
+				push @{$urls}, $url;
+			}
+
+			close LISTFILE;
+		}
+		else
+		{
+			print STDERR "can't open urls list: $!\n";
+			return undef;
+		}
+	}
+	else
+	{
+		print STDERR "URL file list [".($config_file || 'N/A')."] is not defined, doesn't exists, not readable or empty\n";
+		return undef;
+	}
+
+	$urls
+}
+
+
+sub get_last_edited_date
+{
+	my $html = shift;
+
+	my $stripper = HTML::Strip->new ();
+
+	if (defined $html and  $html ne '')
+	{
+		#while ((my $line) = split /\n/, $html)
+		map
+		{
+			my $line = $_;
+			chomp $line;
+			#print "L=[$line]\n";
+
+			my $line_no_html = $stripper->parse ($line);
+
+			if ($line =~ /Last edited by/oi)
+			{
+				print "LEB=[$line_no_html]\n";
+			}
+
+			if ($line_no_html =~ /Last edited by ([\w\d]+);\s+([\w\d\s\:]+)\./oi)
+			{
+				my ($author, $raw_date) = ($1, $2);
+				print "LE found A=[$author] RD=[$raw_date]\n";
+
+				my $led = str2time ($raw_date);
+				print "LEDparsed=[$led]\n";
+				#last;
+			}
+			elsif ($line_no_html =~ /All times are ([\w\s\+-\d]+)\.\s+The time now is/oi)
+			#elsif ($line_no_html =~ /All times are ([\w\s\+-\d]+)\.\s+The time now is (\d{2}\:\d{2})/oi)
+			{
+				print "RL=[$line_no_html]\n";
+				print "Ref TZ[$1], time = $2:$3\n";
+			}
+		}
+		split /\n/, $html;
+	}
+	else
+	{
+		print STDERR "invalid HTML content !\n";
+	}
+}
+
+
+# 4th November 2014 at 01:35
+# => 1st, 2nd, 3rd, 4-31th January-December at HH:MM
+# (\d{1,2})\w+\s+(\w+)\s+(\d{4})\s+at\s+(\d{2})\:(\d{2})
+# $1=day $2=month (text) $3=year(YYYY) $4=HH $5=MM
+# => create a TS, compare with now
+sub convert_date
+{
+	my $date = shift;
+
+	if (defined $date and $date ne '')
+	{
+	}
+	else
+	{
+		print STDERR "invalid date given !\n";
+	}
+}
